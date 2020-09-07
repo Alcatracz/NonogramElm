@@ -2,10 +2,11 @@ module Main exposing (..)
 
 import Array exposing (Array)
 import Browser
-import Html exposing (Html, button, div, h1, h3, p, span, table, td, text, tr)
+import Html exposing (Html, button, div, h1, h3, p, span, table, td, text, tr, var)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Events.Extra.Mouse as Mouse
+import Random as Random
 import Round exposing (round)
 import Style exposing (..)
 import TestData exposing (..)
@@ -13,7 +14,12 @@ import Types exposing (..)
 
 
 main =
-    Browser.sandbox { init = init, update = update, view = view }
+    Browser.element
+        { init = init
+        , subscriptions = \_ -> Sub.none
+        , update = update
+        , view = view
+        }
 
 
 rowColSize : Int
@@ -31,9 +37,9 @@ type alias Model =
     }
 
 
-init : Model
-init =
-    { progress = 0, mistakes = 0, hints = hintsTestData, field = resetField, solution = solutionTestData, state = Running }
+init : () -> ( Model, Cmd Msg )
+init _ =
+    ( { progress = 0, mistakes = 0, hints = resetHints, field = resetField, solution = resetSolution, state = Running }, generateNewGame )
 
 
 resetField : Array (Array Cell)
@@ -41,16 +47,126 @@ resetField =
     Array.repeat rowColSize (Array.repeat rowColSize Blank)
 
 
+resetHints : Hints
+resetHints =
+    { rows = List.repeat rowColSize []
+    , cols = List.repeat rowColSize []
+    }
+
+
+randBool : Random.Generator Bool
+randBool =
+    Random.map (\x -> x == 1) (Random.int 0 1)
+
+
+resetSolution : Array (Array Bool)
+resetSolution =
+    Array.repeat rowColSize (Array.repeat rowColSize False)
+
+
+solutionGenerator : Random.Generator (Array (Array Bool))
+solutionGenerator =
+    --Random.map Array.fromList (Random.list (rowColSize * rowColSize) randBool)
+    Random.map (\val -> chunk val rowColSize) (Random.list (rowColSize * rowColSize) randBool)
+
+
+chunk : List a -> Int -> Array (Array a)
+chunk list n =
+    let
+        inner : List a -> Array (Array a) -> Array (Array a)
+        inner li wa =
+            case li of
+                [] ->
+                    wa
+
+                _ ->
+                    inner (List.drop n li) (Array.push (Array.fromList (List.take n li)) wa)
+    in
+    if List.length list <= n then
+        Array.fromList [ Array.fromList list ]
+
+    else
+        inner list (Array.fromList [])
+
+
+generateNewGame : Cmd Msg
+generateNewGame =
+    Random.generate GenerateGame solutionGenerator
+
+
+rowWut : List Bool -> List Int -> List Int
+rowWut list wa =
+    case list of
+        x :: rest ->
+            if x == True then
+                case wa of
+                    y :: reste ->
+                        rowWut rest (y + 1 :: reste)
+
+                    [] ->
+                        wa
+
+            else
+                rowWut rest (0 :: wa)
+
+        [] ->
+            wa
+
+
+generateHintsFromSolution : Array (Array Bool) -> Hints
+generateHintsFromSolution solution =
+    let
+        rows =
+            Array.toList <| Array.map (\value -> List.filter (\val -> val /= 0) (List.reverse (rowWut (Array.toList value) [ 0 ]))) solution
+
+        cols =
+            Array.toList <| Array.map (\value -> List.filter (\val -> val /= 0) (rowWut (Array.toList value) [ 0 ])) (reverseColRows solution)
+    in
+    { rows = rows, cols = cols }
+
+
+reverseColRows : Array (Array Bool) -> Array (Array Bool)
+reverseColRows list =
+    let
+        another : Int -> Array Bool -> Bool
+        another index value =
+            case Array.get index value of
+                Just n ->
+                    n
+
+                Nothing ->
+                    True
+
+        inner : Int -> Array Bool -> Array (Array Bool) -> Array Bool
+        inner index value li =
+            case Array.get index value of
+                Just _ ->
+                    Array.map (\va -> another index va) li
+
+                Nothing ->
+                    value
+    in
+    Array.indexedMap (\index value -> Array.fromList (Array.foldl (::) [] (inner index value list))) list
+
+
 type Msg
     = NewGame
     | Click Int Int Bool
+    | GenerateGame (Array (Array Bool))
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         NewGame ->
-            { model | progress = 0, mistakes = 0, field = resetField, state = Running }
+            ( { model | progress = 0, mistakes = 0, field = resetField }, generateNewGame )
+
+        GenerateGame newSolution ->
+            let
+                newHints =
+                    generateHintsFromSolution newSolution
+            in
+            ( { model | state = Running, hints = newHints, solution = newSolution }, Cmd.none )
 
         Click x y bo ->
             if checkDat x y model.solution bo then
@@ -66,10 +182,10 @@ update msg model =
                         (toFloat (sumOfElement CorrectTrue newField + sumOfElement IncorrectTrue newField) / toFloat (sumOfElement True model.solution)) * 100
                 in
                 if newProgress == 100 then
-                    { model | field = newField, state = Done, progress = newProgress }
+                    ( { model | field = newField, state = Done, progress = newProgress }, Cmd.none )
 
                 else
-                    { model | progress = newProgress, field = newField }
+                    ( { model | progress = newProgress, field = newField }, Cmd.none )
 
             else
                 let
@@ -84,10 +200,10 @@ update msg model =
                         (toFloat (sumOfElement CorrectTrue newField + sumOfElement IncorrectTrue newField) / toFloat (sumOfElement True model.solution)) * 100
                 in
                 if newProgress == 100 then
-                    { model | mistakes = model.mistakes + 1, field = newField, state = Done, progress = newProgress }
+                    ( { model | mistakes = model.mistakes + 1, field = newField, state = Done, progress = newProgress }, Cmd.none )
 
                 else
-                    { model | mistakes = model.mistakes + 1, field = newField, progress = newProgress }
+                    ( { model | mistakes = model.mistakes + 1, field = newField, progress = newProgress }, Cmd.none )
 
 
 sumOfElement : a -> Array (Array a) -> Int
