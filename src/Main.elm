@@ -2,10 +2,11 @@ module Main exposing (..)
 
 import Array exposing (Array)
 import Browser
-import Html exposing (Html, button, div, h1, h3, input, p, span, table, td, text, tr)
+import Html exposing (Html, button, div, h1, h3, input, option, p, select, span, table, td, text, tr)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Events.Extra.Mouse as Mouse
+import Json.Decode as D
 import Random as Random
 import Round exposing (round)
 import Style exposing (..)
@@ -35,12 +36,13 @@ type alias Model =
     , solution : Array (Array Bool)
     , state : State
     , rowColSize : Int
+    , gameMode : Mode
     }
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { progress = 0, mistakes = 0, hints = resetHints defaultRowColSize, field = resetField defaultRowColSize, solution = resetSolution defaultRowColSize, state = Running, rowColSize = defaultRowColSize }, generateNewGame defaultRowColSize )
+    ( { progress = 0, mistakes = 0, hints = resetHints defaultRowColSize, field = resetField defaultRowColSize, solution = resetSolution defaultRowColSize, state = Running, rowColSize = defaultRowColSize, gameMode = Classic }, generateNewGame defaultRowColSize )
 
 
 resetField : Int -> Array (Array Cell)
@@ -67,7 +69,6 @@ resetSolution n =
 
 solutionGenerator : Int -> Random.Generator (Array (Array Bool))
 solutionGenerator n =
-    --Random.map Array.fromList (Random.list (rowColSize * rowColSize) randBool)
     Random.map (\val -> chunk val n) (Random.list (n * n) randBool)
 
 
@@ -154,14 +155,24 @@ type Msg
     = NewGame
     | Click Int Int Bool
     | GenerateGame (Array (Array Bool))
-    | ChangeRowColSize String
+    | ChangeRowColSize Int
+    | ChangeGameMode Mode
+    | NextLevel
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         NewGame ->
-            ( { model | progress = 0, mistakes = 0, field = resetField model.rowColSize }, generateNewGame model.rowColSize )
+            case model.gameMode of
+                Arcade ->
+                    ( { model | progress = 0, mistakes = 0, field = resetField 2, rowColSize = 2 }, generateNewGame 2 )
+
+                _ ->
+                    ( { model | progress = 0, mistakes = 0, field = resetField model.rowColSize }, generateNewGame model.rowColSize )
+
+        NextLevel ->
+            ( { model | progress = 0, field = resetField (model.rowColSize + 1) }, generateNewGame (model.rowColSize + 1) )
 
         GenerateGame newSolution ->
             let
@@ -171,12 +182,10 @@ update msg model =
             ( { model | state = Running, hints = newHints, solution = newSolution }, Cmd.none )
 
         ChangeRowColSize newValue ->
-            case String.toInt newValue of
-                Just n ->
-                    ( { model | rowColSize = n }, Cmd.none )
+            ( { model | rowColSize = newValue }, Cmd.none )
 
-                Nothing ->
-                    ( model, Cmd.none )
+        ChangeGameMode newMode ->
+            ( { model | gameMode = newMode }, Cmd.none )
 
         Click x y bo ->
             if checkDat x y model.solution bo then
@@ -192,7 +201,12 @@ update msg model =
                         (toFloat (sumOfElement CorrectTrue newField + sumOfElement IncorrectTrue newField) / toFloat (sumOfElement True model.solution)) * 100
                 in
                 if newProgress == 100 then
-                    ( { model | field = newField, state = Done, progress = newProgress }, Cmd.none )
+                    case model.gameMode of
+                        Arcade ->
+                            ( { model | progress = 0, rowColSize = model.rowColSize + 1, field = resetField (model.rowColSize + 1) }, generateNewGame (model.rowColSize + 1) )
+
+                        _ ->
+                            ( { model | field = newField, state = Done, progress = newProgress }, Cmd.none )
 
                 else
                     ( { model | progress = newProgress, field = newField }, Cmd.none )
@@ -210,7 +224,12 @@ update msg model =
                         (toFloat (sumOfElement CorrectTrue newField + sumOfElement IncorrectTrue newField) / toFloat (sumOfElement True model.solution)) * 100
                 in
                 if newProgress == 100 then
-                    ( { model | mistakes = model.mistakes + 1, field = newField, state = Done, progress = newProgress }, Cmd.none )
+                    case model.gameMode of
+                        Arcade ->
+                            ( { model | mistakes = model.mistakes + 1, progress = 0, field = resetField (model.rowColSize + 1), rowColSize = model.rowColSize + 1 }, generateNewGame (model.rowColSize + 1) )
+
+                        _ ->
+                            ( { model | mistakes = model.mistakes + 1, field = newField, state = Done, progress = newProgress }, Cmd.none )
 
                 else
                     ( { model | mistakes = model.mistakes + 1, field = newField, progress = newProgress }, Cmd.none )
@@ -318,6 +337,46 @@ gameToView model =
     wat :: table
 
 
+targetValueModeDecoder : D.Decoder Mode
+targetValueModeDecoder =
+    targetValue
+        |> D.andThen
+            (\val ->
+                case val of
+                    "classic" ->
+                        D.succeed Classic
+
+                    "arcade" ->
+                        D.succeed Arcade
+
+                    _ ->
+                        D.succeed Classic
+            )
+
+
+targetValueSizeDecoder : D.Decoder Int
+targetValueSizeDecoder =
+    targetValue
+        |> D.andThen
+            (\val ->
+                case val of
+                    "5x5" ->
+                        D.succeed 5
+
+                    "10x10" ->
+                        D.succeed 10
+
+                    "15x15" ->
+                        D.succeed 15
+
+                    "20x20" ->
+                        D.succeed 20
+
+                    _ ->
+                        D.succeed 5
+            )
+
+
 view : Model -> Html Msg
 view model =
     Html.div containerStyle
@@ -337,10 +396,22 @@ view model =
                     [ span [] [ text "Mistakes: " ]
                     , span [] [ text (String.fromInt model.mistakes) ]
                     ]
-                , div []
-                    [ button [ onClick NewGame ] [ text "New Game" ]
-                    , input [ value (String.fromInt model.rowColSize), onInput ChangeRowColSize ] []
+                , select [ on "change" (D.map ChangeGameMode targetValueModeDecoder) ]
+                    [ option [ value "classic" ] [ text "Classic" ]
+                    , option [ value "arcade" ] [ text "Arcade" ]
                     ]
+                , case model.gameMode of
+                    Arcade ->
+                        div [] []
+
+                    _ ->
+                        select [ on "change" (D.map ChangeRowColSize targetValueSizeDecoder) ]
+                            [ option [ value "5x5" ] [ text "5x5" ]
+                            , option [ value "10x10" ] [ text "10x10" ]
+                            , option [ value "15x15" ] [ text "15x15" ]
+                            , option [ value "20x20" ] [ text "20x20" ]
+                            ]
+                , button [ onClick NewGame ] [ text "New Game" ]
                 ]
             , div []
                 [ case model.state of

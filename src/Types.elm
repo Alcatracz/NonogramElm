@@ -22,3 +22,8 @@ type alias Hints =
     { rows : DoubleList Int
     , cols : DoubleList Int
     }
+
+
+type Mode
+    = Classic
+    | Arcade
