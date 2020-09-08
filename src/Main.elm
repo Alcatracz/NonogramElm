@@ -2,7 +2,7 @@ module Main exposing (..)
 
 import Array exposing (Array)
 import Browser
-import Html exposing (Html, button, div, h1, h3, p, span, table, td, text, tr, var)
+import Html exposing (Html, button, div, h1, h3, input, p, span, table, td, text, tr)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Events.Extra.Mouse as Mouse
@@ -22,8 +22,8 @@ main =
         }
 
 
-rowColSize : Int
-rowColSize =
+defaultRowColSize : Int
+defaultRowColSize =
     5
 
 
@@ -34,23 +34,24 @@ type alias Model =
     , field : Array (Array Cell)
     , solution : Array (Array Bool)
     , state : State
+    , rowColSize : Int
     }
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { progress = 0, mistakes = 0, hints = resetHints, field = resetField, solution = resetSolution, state = Running }, generateNewGame )
+    ( { progress = 0, mistakes = 0, hints = resetHints defaultRowColSize, field = resetField defaultRowColSize, solution = resetSolution defaultRowColSize, state = Running, rowColSize = defaultRowColSize }, generateNewGame defaultRowColSize )
 
 
-resetField : Array (Array Cell)
-resetField =
-    Array.repeat rowColSize (Array.repeat rowColSize Blank)
+resetField : Int -> Array (Array Cell)
+resetField n =
+    Array.repeat n (Array.repeat n Blank)
 
 
-resetHints : Hints
-resetHints =
-    { rows = List.repeat rowColSize []
-    , cols = List.repeat rowColSize []
+resetHints : Int -> Hints
+resetHints n =
+    { rows = List.repeat n []
+    , cols = List.repeat n []
     }
 
 
@@ -59,15 +60,15 @@ randBool =
     Random.map (\x -> x == 1) (Random.int 0 1)
 
 
-resetSolution : Array (Array Bool)
-resetSolution =
-    Array.repeat rowColSize (Array.repeat rowColSize False)
+resetSolution : Int -> Array (Array Bool)
+resetSolution n =
+    Array.repeat n (Array.repeat n False)
 
 
-solutionGenerator : Random.Generator (Array (Array Bool))
-solutionGenerator =
+solutionGenerator : Int -> Random.Generator (Array (Array Bool))
+solutionGenerator n =
     --Random.map Array.fromList (Random.list (rowColSize * rowColSize) randBool)
-    Random.map (\val -> chunk val rowColSize) (Random.list (rowColSize * rowColSize) randBool)
+    Random.map (\val -> chunk val n) (Random.list (n * n) randBool)
 
 
 chunk : List a -> Int -> Array (Array a)
@@ -89,9 +90,9 @@ chunk list n =
         inner list (Array.fromList [])
 
 
-generateNewGame : Cmd Msg
-generateNewGame =
-    Random.generate GenerateGame solutionGenerator
+generateNewGame : Int -> Cmd Msg
+generateNewGame n =
+    Random.generate GenerateGame (solutionGenerator n)
 
 
 rowWut : List Bool -> List Int -> List Int
@@ -153,13 +154,14 @@ type Msg
     = NewGame
     | Click Int Int Bool
     | GenerateGame (Array (Array Bool))
+    | ChangeRowColSize String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         NewGame ->
-            ( { model | progress = 0, mistakes = 0, field = resetField }, generateNewGame )
+            ( { model | progress = 0, mistakes = 0, field = resetField model.rowColSize }, generateNewGame model.rowColSize )
 
         GenerateGame newSolution ->
             let
@@ -167,6 +169,14 @@ update msg model =
                     generateHintsFromSolution newSolution
             in
             ( { model | state = Running, hints = newHints, solution = newSolution }, Cmd.none )
+
+        ChangeRowColSize newValue ->
+            case String.toInt newValue of
+                Just n ->
+                    ( { model | rowColSize = n }, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         Click x y bo ->
             if checkDat x y model.solution bo then
@@ -329,6 +339,7 @@ view model =
                     ]
                 , div []
                     [ button [ onClick NewGame ] [ text "New Game" ]
+                    , input [ value (String.fromInt model.rowColSize), onInput ChangeRowColSize ] []
                     ]
                 ]
             , div []
