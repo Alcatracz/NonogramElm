@@ -28,6 +28,11 @@ defaultRowColSize =
     5
 
 
+defaultFrameSize : Float
+defaultFrameSize =
+    500
+
+
 type alias Model =
     { progress : Float
     , mistakes : Int
@@ -37,12 +42,13 @@ type alias Model =
     , state : State
     , rowColSize : Int
     , gameMode : Mode
+    , rowSizeInput : Int
     }
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { progress = 0, mistakes = 0, hints = resetHints defaultRowColSize, field = resetField defaultRowColSize, solution = resetSolution defaultRowColSize, state = Running, rowColSize = defaultRowColSize, gameMode = Classic }, generateNewGame defaultRowColSize )
+    ( { progress = 0, mistakes = 0, hints = resetHints defaultRowColSize, field = resetField defaultRowColSize, solution = resetSolution defaultRowColSize, state = Running, rowColSize = defaultRowColSize, gameMode = Classic, rowSizeInput = defaultRowColSize }, generateNewGame defaultRowColSize )
 
 
 resetField : Int -> Array (Array Cell)
@@ -169,7 +175,7 @@ update msg model =
                     ( { model | progress = 0, mistakes = 0, field = resetField 2, rowColSize = 2 }, generateNewGame 2 )
 
                 _ ->
-                    ( { model | progress = 0, mistakes = 0, field = resetField model.rowColSize }, generateNewGame model.rowColSize )
+                    ( { model | progress = 0, mistakes = 0, field = resetField model.rowSizeInput, rowColSize = model.rowSizeInput }, generateNewGame model.rowSizeInput )
 
         NextLevel ->
             ( { model | progress = 0, field = resetField (model.rowColSize + 1) }, generateNewGame (model.rowColSize + 1) )
@@ -182,7 +188,7 @@ update msg model =
             ( { model | state = Running, hints = newHints, solution = newSolution }, Cmd.none )
 
         ChangeRowColSize newValue ->
-            ( { model | rowColSize = newValue }, Cmd.none )
+            ( { model | rowSizeInput = newValue }, Cmd.none )
 
         ChangeGameMode newMode ->
             ( { model | gameMode = newMode }, Cmd.none )
@@ -206,7 +212,7 @@ update msg model =
                             ( { model | progress = 0, rowColSize = model.rowColSize + 1, field = resetField (model.rowColSize + 1) }, generateNewGame (model.rowColSize + 1) )
 
                         _ ->
-                            ( { model | field = newField, state = Done, progress = newProgress }, Cmd.none )
+                            ( { model | field = newField, state = Finished, progress = newProgress }, Cmd.none )
 
                 else
                     ( { model | progress = newProgress, field = newField }, Cmd.none )
@@ -229,7 +235,7 @@ update msg model =
                             ( { model | mistakes = model.mistakes + 1, progress = 0, field = resetField (model.rowColSize + 1), rowColSize = model.rowColSize + 1 }, generateNewGame (model.rowColSize + 1) )
 
                         _ ->
-                            ( { model | mistakes = model.mistakes + 1, field = newField, state = Done, progress = newProgress }, Cmd.none )
+                            ( { model | mistakes = model.mistakes + 1, field = newField, state = Finished, progress = newProgress }, Cmd.none )
 
                 else
                     ( { model | mistakes = model.mistakes + 1, field = newField, progress = newProgress }, Cmd.none )
@@ -270,18 +276,22 @@ checkDat x y solution markedAs =
             False
 
 
-colHintsToView : Hints -> Html Msg
-colHintsToView { cols } =
-    tr trStyle (List.map (\list -> Html.td (hintTdStyle "column") (hintsToView list)) ([] :: cols))
+colHintsToView : Hints -> Float -> Html Msg
+colHintsToView { cols } size =
+    let
+        long =
+            size * toFloat (ceiling (toFloat (List.length cols) / 5))
+    in
+    tr trStyle (td (hintTdStyle "column" ( long, long )) [] :: List.map (\list -> Html.td (hintTdStyle "column" ( long, size )) (hintsToView list)) cols)
 
 
 hintsToView : List Int -> List (Html Msg)
 hintsToView list =
-    List.map (\value -> div [] [ text (String.fromInt value) ]) list
+    List.map (\value -> div hintStyle [ text (String.fromInt value) ]) list
 
 
-rowToView : Int -> Array Cell -> State -> List (Html Msg)
-rowToView rowIndex list state =
+rowToView : Int -> Array Cell -> State -> Float -> List (Html Msg)
+rowToView rowIndex list state size =
     let
         attribu : Int -> Cell -> Html Msg
         attribu y value =
@@ -294,29 +304,33 @@ rowToView rowIndex list state =
                         ""
 
                 atribu =
-                    if state == Done || value /= Blank then
-                        cellTdStyle value
+                    if state == Finished || value /= Blank then
+                        cellTdStyle value size state
 
                     else
-                        Mouse.onContextMenu (\_ -> Click rowIndex y False) :: Mouse.onClick (\_ -> Click rowIndex y True) :: cellTdStyle value
+                        Mouse.onContextMenu (\_ -> Click rowIndex y False) :: Mouse.onClick (\_ -> Click rowIndex y True) :: cellTdStyle value size state
             in
             td atribu [ text texto ]
     in
     Array.toList (Array.indexedMap (\index value -> attribu index value) list)
 
 
-rowtt : State -> Int -> List Int -> Array Cell -> Html Msg
-rowtt state rowIndex hints cells =
-    Html.tr trStyle (td (hintTdStyle "row") (hintsToView hints) :: rowToView rowIndex cells state)
+rowtt : State -> Int -> List Int -> Array Cell -> Float -> Html Msg
+rowtt state rowIndex hints cells size =
+    let
+        long =
+            size * toFloat (ceiling (toFloat (Array.length cells) / 5))
+    in
+    Html.tr trStyle (td (hintTdStyle "row" ( long, size )) (hintsToView hints) :: rowToView rowIndex cells state size)
 
 
-fieldToView : Int -> List (Html Msg) -> DoubleList Int -> Array (Array Cell) -> State -> List (Html Msg)
-fieldToView index li hints field state =
+fieldToView : Int -> List (Html Msg) -> DoubleList Int -> Array (Array Cell) -> State -> Float -> List (Html Msg)
+fieldToView index li hints field state size =
     case hints of
         x :: rest ->
             case Array.get 0 field of
                 Just y ->
-                    rowtt state index x y :: fieldToView (index + 1) li rest (Array.slice 1 (Array.length field) field) state
+                    rowtt state index x y size :: fieldToView (index + 1) li rest (Array.slice 1 (Array.length field) field) state size
 
                 Nothing ->
                     li
@@ -328,11 +342,14 @@ fieldToView index li hints field state =
 gameToView : Model -> List (Html Msg)
 gameToView model =
     let
+        tdSize =
+            defaultFrameSize / toFloat (model.rowColSize + 1)
+
         wat =
-            colHintsToView model.hints
+            colHintsToView model.hints tdSize
 
         table =
-            fieldToView 0 [] model.hints.rows model.field model.state
+            fieldToView 0 [] model.hints.rows model.field model.state tdSize
     in
     wat :: table
 
@@ -380,48 +397,39 @@ targetValueSizeDecoder =
 view : Model -> Html Msg
 view model =
     Html.div containerStyle
-        [ Html.div headerContainerStyle
+        [ Html.div sideContainerStyle
             [ h1 [] [ text "Nonogramm" ]
             , h3 [] [ text "by Jan-Ole Claußen" ]
             , p [] [ text "Rules: Left click reveals a field, Right click marks it as empty." ]
-            ]
-        , Html.div contentContainerStyle
-            [ Html.div sideContainerStyle
-                [ h3 [] [ text "Spiel" ]
-                , p []
-                    [ span [] [ text "Progress: " ]
-                    , span [] [ text (round 1 model.progress) ]
-                    ]
-                , p []
-                    [ span [] [ text "Mistakes: " ]
-                    , span [] [ text (String.fromInt model.mistakes) ]
-                    ]
-                , select [ on "change" (D.map ChangeGameMode targetValueModeDecoder) ]
-                    [ option [ value "classic" ] [ text "Classic" ]
-                    , option [ value "arcade" ] [ text "Arcade" ]
-                    ]
-                , case model.gameMode of
-                    Arcade ->
-                        div [] []
-
-                    _ ->
-                        select [ on "change" (D.map ChangeRowColSize targetValueSizeDecoder) ]
-                            [ option [ value "5x5" ] [ text "5x5" ]
-                            , option [ value "10x10" ] [ text "10x10" ]
-                            , option [ value "15x15" ] [ text "15x15" ]
-                            , option [ value "20x20" ] [ text "20x20" ]
-                            ]
-                , button [ onClick NewGame ] [ text "New Game" ]
+            , h3 [] [ text "Spiel" ]
+            , p []
+                [ span [] [ text "Progress: " ]
+                , span [] [ text (round 1 model.progress) ]
                 ]
-            , div []
-                [ case model.state of
-                    Done ->
-                        div [] [ text "Fertig" ]
-
-                    _ ->
-                        div [] []
-                , table (tableStyle model.state)
-                    (gameToView model)
+            , p []
+                [ span [] [ text "Mistakes: " ]
+                , span (mistakesStyle model.mistakes) [ text (String.fromInt model.mistakes) ]
                 ]
+            , select [ on "change" (D.map ChangeGameMode targetValueModeDecoder) ]
+                [ option [ value "classic" ] [ text "Classic" ]
+                , option [ value "arcade" ] [ text "Arcade" ]
+                ]
+            , case model.gameMode of
+                Arcade ->
+                    div [] []
+
+                _ ->
+                    select [ on "change" (D.map ChangeRowColSize targetValueSizeDecoder) ]
+                        [ option [ value "5x5" ] [ text "5x5" ]
+                        , option [ value "10x10" ] [ text "10x10" ]
+                        , option [ value "15x15" ] [ text "15x15" ]
+                        , option [ value "20x20" ] [ text "20x20" ]
+                        ]
+            , button [ onClick NewGame ] [ text "New Game" ]
             ]
+        , div contentContainerStyle
+            [ table (tableStyle model.state)
+                (gameToView model)
+            ]
+        , div footerContainerStyle []
         ]

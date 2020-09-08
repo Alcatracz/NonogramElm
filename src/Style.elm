@@ -3,15 +3,17 @@ module Style exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Types exposing (..)
+import Types exposing (State(..))
 
 
 containerStyle : List (Attribute msg)
 containerStyle =
     [ style "display" "flex"
     , style "flex" "1"
-    , style "flex-direction" "column"
+    , style "flex-direction" "row"
     , style "font-family" "Helvetica, sans-serif"
     , style "background-color" "#eeeeee"
+    , style "padding" "3em"
     ]
 
 
@@ -19,7 +21,6 @@ headerContainerStyle : List (Attribute msg)
 headerContainerStyle =
     [ style "display" "flex"
     , style "flex" "1"
-    , style "height" "400px"
     , style "padding" "1em"
     , style "flex-direction" "column"
     ]
@@ -28,7 +29,8 @@ headerContainerStyle =
 contentContainerStyle : List (Attribute msg)
 contentContainerStyle =
     [ style "display" "flex"
-    , style "flex" "3"
+    , style "flex" "1"
+    , style "margin-left" "1em"
     ]
 
 
@@ -44,46 +46,90 @@ sideContainerStyle =
 trStyle : List (Attribute msg)
 trStyle =
     [ style "display" "flex"
+
+    --  , style "flex" "1"
+    , style "padding" "0"
+    , style "margin" "0"
+    , style "border" "0"
+    , style "box-sizing" "border-box"
+    , style "border-bottom" "1px solid grey"
     ]
 
 
 tableStyle : State -> List (Attribute msg)
 tableStyle state =
-    if state == Done then
-        [ style "pointer-events" "none" ]
+    if state == Finished then
+        [ style "pointer-events" "none"
+
+        --, style "width" "500px"
+        --, style "height" "500px"
+        ]
 
     else
-        []
+        [ --style "width" "700px"
+          --, style "height" "700px"
+          style "padding" "0"
+        , style "margin" "0"
+        , style "border" "0"
+        , style "border-collapse" "collapse"
+        , style "border-spacing" "0"
+        , style "box-sizing" "border-box"
+
+        -- , style "display" "flex"
+        --  , style "flex-direction" "column"
+        ]
 
 
-hintTdStyle : String -> List (Attribute msg)
-hintTdStyle direction =
+hintTdStyle : String -> ( Float, Float ) -> List (Attribute msg)
+hintTdStyle direction ( width, height ) =
     let
         custom : List (Attribute msg)
         custom =
+            let
+                wid =
+                    String.fromFloat width ++ "px"
+
+                hei =
+                    String.fromFloat height ++ "px"
+            in
             if direction == "row" then
                 [ style "flex-direction" "row"
+                , style "min-width" "25px"
                 , style "border-left" "none"
+                , style "width" wid
+                , style "height" hei
                 ]
 
             else
                 [ style "flex-direction" "column"
                 , style "border-top" "none"
+                , style "width" hei
+                , style "height" wid
                 ]
     in
-    [ style "width" "50px"
-    , style "height" "50px"
-    , style "border" "1px solid black"
-    , style "display" "flex"
-    , style "justify-content" "space-evenly"
+    [ --style "border" "1px solid black"
+      style "display" "flex"
+
+    -- , style "flex" "1"
+    --  , style "width" "5vw"
+    --, style "height" "5vw"
+    , style "justify-content" "flex-end"
     , style "align-items" "center"
+    , style "padding" "0"
+    , style "margin" "0"
+    , style "border" "0"
+    , style "box-sizing" "border-box"
+    , style "border-right" "1px solid grey"
     ]
         ++ custom
 
 
-cellTdStyle : Cell -> List (Attribute msg)
-cellTdStyle cell =
+cellTdStyle : Cell -> Float -> State -> List (Attribute msg)
+cellTdStyle cell size state =
     let
+        wid =
+            String.fromFloat size ++ "px"
+
         custom : List (Attribute msg)
         custom =
             case cell of
@@ -92,19 +138,62 @@ cellTdStyle cell =
                     ]
 
                 CorrectTrue ->
-                    [ style "background-color" "green" ]
+                    if state == Finished then
+                        [ style "background-color" "green" ]
+
+                    else
+                        [ style "background-color" "blue" ]
 
                 CorrectFalse ->
                     [ style "background-color" "grey" ]
 
                 IncorrectTrue ->
-                    [ style "background-color" "green" ]
+                    if state == Finished then
+                        [ style "background-color" "green" ]
+
+                    else
+                        [ style "background-color" "blue" ]
 
                 IncorrectFalse ->
                     [ style "background-color" "grey" ]
     in
-    [ style "width" "50px"
-    , style "height" "50px"
-    , style "border" "1px solid lightgrey"
+    [ --style "border" "1px solid lightgrey"
+      style "display" "flex"
+
+    -- , style "flex" "1"
+    --, style "width" "5vw"
+    --, style "height" "5vw"
+    , style "justify-content" "center"
+    , style "align-items" "center"
+    , style "padding" "0"
+    , style "margin" "0"
+    , style "border" "0"
+    , style "box-sizing" "border-box"
+    , style "width" wid
+    , style "height" wid
+    , style "border-right" "1px solid grey"
+    , style "text-align" "center"
+    , style "color" "red"
     ]
         ++ custom
+
+
+hintStyle : List (Attribute msg)
+hintStyle =
+    [ style "padding" "0.25em"
+    ]
+
+
+footerContainerStyle : List (Attribute msg)
+footerContainerStyle =
+    []
+
+
+mistakesStyle : Int -> List (Attribute msg)
+mistakesStyle m =
+    if m /= 0 then
+        [ style "color" "red"
+        ]
+
+    else
+        []

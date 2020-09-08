@@ -10,7 +10,7 @@ type Cell
 
 
 type State
-    = Done
+    = Finished
     | Running
 
 
