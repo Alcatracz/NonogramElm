@@ -27,3 +27,4 @@ type alias Hints =
 type Mode
     = Classic
     | Arcade
+    | MultiSolution

@@ -2,7 +2,7 @@ module Main exposing (..)
 
 import Array exposing (Array)
 import Browser
-import Html exposing (Html, button, div, h1, h3, input, option, p, select, span, table, td, text, tr)
+import Html exposing (Attribute, Html, button, col, div, h1, h3, input, option, p, select, span, table, td, text, tr)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Events.Extra.Mouse as Mouse
@@ -164,6 +164,7 @@ type Msg
     | ChangeRowColSize Int
     | ChangeGameMode Mode
     | NextLevel
+    | Solve
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -193,52 +194,91 @@ update msg model =
         ChangeGameMode newMode ->
             ( { model | gameMode = newMode }, Cmd.none )
 
+        Solve ->
+            ( { model | field = solveMulti model.solution model.field model.mistakes, state = Finished }, Cmd.none )
+
         Click x y bo ->
-            if checkDat x y model.solution bo then
-                let
-                    newField =
-                        if bo == True then
-                            markAs x y model.field CorrectTrue
+            let
+                correctguess =
+                    checkDat x y model.solution bo
 
-                        else
-                            markAs x y model.field CorrectFalse
-
-                    newProgress =
-                        (toFloat (sumOfElement CorrectTrue newField + sumOfElement IncorrectTrue newField) / toFloat (sumOfElement True model.solution)) * 100
-                in
-                if newProgress == 100 then
+                newField =
                     case model.gameMode of
-                        Arcade ->
-                            ( { model | progress = 0, rowColSize = model.rowColSize + 1, field = resetField (model.rowColSize + 1) }, generateNewGame (model.rowColSize + 1) )
+                        MultiSolution ->
+                            if bo then
+                                markAs x y model.field CorrectTrue
+
+                            else
+                                markAs x y model.field CorrectFalse
 
                         _ ->
-                            ( { model | field = newField, state = Finished, progress = newProgress }, Cmd.none )
+                            if bo == True && correctguess == True then
+                                markAs x y model.field CorrectTrue
 
-                else
-                    ( { model | progress = newProgress, field = newField }, Cmd.none )
+                            else if bo == False && correctguess == True then
+                                markAs x y model.field CorrectFalse
 
-            else
-                let
-                    newField =
-                        if bo == True then
-                            markAs x y model.field IncorrectFalse
+                            else if correctguess == False && bo == False then
+                                markAs x y model.field IncorrectTrue
 
-                        else
-                            markAs x y model.field IncorrectTrue
+                            else
+                                markAs x y model.field IncorrectFalse
 
-                    newProgress =
-                        (toFloat (sumOfElement CorrectTrue newField + sumOfElement IncorrectTrue newField) / toFloat (sumOfElement True model.solution)) * 100
-                in
-                if newProgress == 100 then
-                    case model.gameMode of
-                        Arcade ->
-                            ( { model | mistakes = model.mistakes + 1, progress = 0, field = resetField (model.rowColSize + 1), rowColSize = model.rowColSize + 1 }, generateNewGame (model.rowColSize + 1) )
+                newProgress =
+                    (toFloat (sumOfElement CorrectTrue newField + sumOfElement IncorrectTrue newField) / toFloat (sumOfElement True model.solution)) * 100
+            in
+            case model.gameMode of
+                MultiSolution ->
+                    ( { model | field = newField }, Cmd.none )
 
-                        _ ->
-                            ( { model | mistakes = model.mistakes + 1, field = newField, state = Finished, progress = newProgress }, Cmd.none )
+                _ ->
+                    if newProgress == 100 then
+                        case model.gameMode of
+                            Arcade ->
+                                ( { model | progress = 0, rowColSize = model.rowColSize + 1, field = resetField (model.rowColSize + 1) }, generateNewGame (model.rowColSize + 1) )
 
-                else
-                    ( { model | mistakes = model.mistakes + 1, field = newField, progress = newProgress }, Cmd.none )
+                            _ ->
+                                ( { model | field = newField, state = Finished, progress = newProgress }, Cmd.none )
+
+                    else if correctguess then
+                        ( { model | progress = newProgress, field = newField }, Cmd.none )
+
+                    else
+                        ( { model | mistakes = model.mistakes + 1, field = newField, progress = newProgress }, Cmd.none )
+
+
+solveMulti : Array (Array Bool) -> Array (Array Cell) -> Array (Array Cell)
+solveMulti solution field =
+    let
+        another : Int -> Int -> Cell -> Cell
+        another rI cI val =
+            case Array.get rI solution of
+                Just n ->
+                    case Array.get cI n of
+                        Just m ->
+                            if m && val == CorrectFalse then
+                                IncorrectTrue
+
+                            else if m == False && val == CorrectTrue then
+                                IncorrectFalse
+
+                            else if val == Blank && m == True then
+                                IncorrectTrue
+
+                            else
+                                val
+
+                        Nothing ->
+                            val
+
+                Nothing ->
+                    val
+
+        inner : Array Cell -> Int -> Array Cell
+        inner li rowIndex =
+            Array.indexedMap (\colIndex value -> another rowIndex colIndex value) li
+    in
+    Array.indexedMap (\index row -> inner row index) field
 
 
 sumOfElement : a -> Array (Array a) -> Int
@@ -290,8 +330,8 @@ hintsToView list =
     List.map (\value -> div hintStyle [ text (String.fromInt value) ]) list
 
 
-rowToView : Int -> Array Cell -> State -> Float -> List (Html Msg)
-rowToView rowIndex list state size =
+rowToView : Int -> Array Cell -> State -> Float -> Mode -> List (Html Msg)
+rowToView rowIndex list state size mode =
     let
         attribu : Int -> Cell -> Html Msg
         attribu y value =
@@ -304,7 +344,7 @@ rowToView rowIndex list state size =
                         ""
 
                 atribu =
-                    if state == Finished || value /= Blank then
+                    if state == Finished || value /= Blank && mode /= MultiSolution then
                         cellTdStyle value size state
 
                     else
@@ -315,22 +355,22 @@ rowToView rowIndex list state size =
     Array.toList (Array.indexedMap (\index value -> attribu index value) list)
 
 
-rowtt : State -> Int -> List Int -> Array Cell -> Float -> Html Msg
-rowtt state rowIndex hints cells size =
+rowtt : State -> Int -> List Int -> Array Cell -> Float -> Mode -> Html Msg
+rowtt state rowIndex hints cells size mode =
     let
         long =
             size * toFloat (ceiling (toFloat (Array.length cells) / 5))
     in
-    Html.tr trStyle (td (hintTdStyle "row" ( long, size )) (hintsToView hints) :: rowToView rowIndex cells state size)
+    Html.tr trStyle (td (hintTdStyle "row" ( long, size )) (hintsToView hints) :: rowToView rowIndex cells state size mode)
 
 
-fieldToView : Int -> List (Html Msg) -> DoubleList Int -> Array (Array Cell) -> State -> Float -> List (Html Msg)
-fieldToView index li hints field state size =
+fieldToView : Int -> List (Html Msg) -> DoubleList Int -> Array (Array Cell) -> State -> Float -> Mode -> List (Html Msg)
+fieldToView index li hints field state size mode =
     case hints of
         x :: rest ->
             case Array.get 0 field of
                 Just y ->
-                    rowtt state index x y size :: fieldToView (index + 1) li rest (Array.slice 1 (Array.length field) field) state size
+                    rowtt state index x y size mode :: fieldToView (index + 1) li rest (Array.slice 1 (Array.length field) field) state size mode
 
                 Nothing ->
                     li
@@ -349,7 +389,7 @@ gameToView model =
             colHintsToView model.hints tdSize
 
         table =
-            fieldToView 0 [] model.hints.rows model.field model.state tdSize
+            fieldToView 0 [] model.hints.rows model.field model.state tdSize model.gameMode
     in
     wat :: table
 
@@ -365,6 +405,9 @@ targetValueModeDecoder =
 
                     "arcade" ->
                         D.succeed Arcade
+
+                    "multiSolution" ->
+                        D.succeed MultiSolution
 
                     _ ->
                         D.succeed Classic
@@ -402,10 +445,15 @@ view model =
             , h3 [] [ text "by Jan-Ole Claußen" ]
             , p [] [ text "Rules: Left click reveals a field, Right click marks it as empty." ]
             , h3 [] [ text "Spiel" ]
-            , p []
-                [ span [] [ text "Progress: " ]
-                , span [] [ text (round 1 model.progress) ]
-                ]
+            , case model.gameMode of
+                MultiSolution ->
+                    button [ onClick Solve ] [ text "Solve" ]
+
+                _ ->
+                    p []
+                        [ span [] [ text "Progress: " ]
+                        , span [] [ text (round 1 model.progress) ]
+                        ]
             , p []
                 [ span [] [ text "Mistakes: " ]
                 , span (mistakesStyle model.mistakes) [ text (String.fromInt model.mistakes) ]
@@ -413,6 +461,7 @@ view model =
             , select [ on "change" (D.map ChangeGameMode targetValueModeDecoder) ]
                 [ option [ value "classic" ] [ text "Classic" ]
                 , option [ value "arcade" ] [ text "Arcade" ]
+                , option [ value "multiSolution" ] [ text "Multiple Solutions" ]
                 ]
             , case model.gameMode of
                 Arcade ->
