@@ -32,17 +32,7 @@ type Mode
     | MultiSolution
 
 
-type alias Model =
-    { progress : Float
-    , mistakes : Int
-    , hints : Hints
-    , field : Array (Array Cell)
-    , solution : Array (Array Bool)
-    , state : State
-    , rowColSize : Int
-    , gameMode : Mode
-    , rowSizeInput : Int
-    }
+
 
 
 type Msg
