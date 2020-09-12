@@ -7,6 +7,9 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Events.Extra.Mouse as Mouse
 import Json.Decode as D
+import Json.Decode.Pipeline exposing (hardcoded, optional, required)
+import Json.Encode as E
+import Ports exposing (..)
 import Random as Random
 import Round exposing (round)
 import Style exposing (..)
@@ -14,11 +17,12 @@ import TestData exposing (..)
 import Types exposing (..)
 
 
+main : Program E.Value Model Msg
 main =
     Browser.element
         { init = init
         , subscriptions = \_ -> Sub.none
-        , update = update
+        , update = updateWithStorage
         , view = view
         }
 
@@ -33,22 +37,14 @@ defaultFrameSize =
     500
 
 
-type alias Model =
-    { progress : Float
-    , mistakes : Int
-    , hints : Hints
-    , field : Array (Array Cell)
-    , solution : Array (Array Bool)
-    , state : State
-    , rowColSize : Int
-    , gameMode : Mode
-    , rowSizeInput : Int
-    }
+init : E.Value -> ( Model, Cmd Msg )
+init flags =
+    case D.decodeValue decoder flags of
+        Ok model ->
+            ( model, Cmd.none )
 
-
-init : () -> ( Model, Cmd Msg )
-init _ =
-    ( { progress = 0, mistakes = 0, hints = resetHints defaultRowColSize, field = resetField defaultRowColSize, solution = resetSolution defaultRowColSize, state = Running, rowColSize = defaultRowColSize, gameMode = Classic, rowSizeInput = defaultRowColSize }, generateNewGame defaultRowColSize )
+        Err _ ->
+            ( { progress = 0, mistakes = 0, hints = resetHints defaultRowColSize, field = resetField defaultRowColSize, solution = resetSolution defaultRowColSize, state = Running, rowColSize = defaultRowColSize, gameMode = Classic, rowSizeInput = defaultRowColSize }, generateNewGame defaultRowColSize )
 
 
 resetField : Int -> Array (Array Cell)
@@ -157,16 +153,6 @@ reverseColRows list =
     Array.indexedMap (\index value -> Array.fromList (Array.foldl (::) [] (inner index value list))) list
 
 
-type Msg
-    = NewGame
-    | Click Int Int Bool
-    | GenerateGame (Array (Array Bool))
-    | ChangeRowColSize Int
-    | ChangeGameMode Mode
-    | NextLevel
-    | Solve
-
-
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
@@ -195,7 +181,7 @@ update msg model =
             ( { model | gameMode = newMode }, Cmd.none )
 
         Solve ->
-            ( { model | field = solveMulti model.solution model.field model.mistakes, state = Finished }, Cmd.none )
+            ( { model | field = solveMulti model.solution model.field, state = Finished }, Cmd.none )
 
         Click x y bo ->
             let
@@ -245,6 +231,17 @@ update msg model =
 
                     else
                         ( { model | mistakes = model.mistakes + 1, field = newField, progress = newProgress }, Cmd.none )
+
+
+updateWithStorage : Msg -> Model -> ( Model, Cmd Msg )
+updateWithStorage msg oldModel =
+    let
+        ( newModel, cmds ) =
+            update msg oldModel
+    in
+    ( newModel
+    , Cmd.batch [ setStorage (encode newModel), cmds ]
+    )
 
 
 solveMulti : Array (Array Bool) -> Array (Array Cell) -> Array (Array Cell)
@@ -459,9 +456,9 @@ view model =
                 , span (mistakesStyle model.mistakes) [ text (String.fromInt model.mistakes) ]
                 ]
             , select [ on "change" (D.map ChangeGameMode targetValueModeDecoder) ]
-                [ option [ value "classic" ] [ text "Classic" ]
-                , option [ value "arcade" ] [ text "Arcade" ]
-                , option [ value "multiSolution" ] [ text "Multiple Solutions" ]
+                [ option [ value "classic", selected (model.gameMode == Classic) ] [ text "Classic" ]
+                , option [ value "arcade", selected (model.gameMode == Arcade) ] [ text "Arcade" ]
+                , option [ value "multiSolution", selected (model.gameMode == MultiSolution) ] [ text "Multiple Solutions" ]
                 ]
             , case model.gameMode of
                 Arcade ->
@@ -469,10 +466,10 @@ view model =
 
                 _ ->
                     select [ on "change" (D.map ChangeRowColSize targetValueSizeDecoder) ]
-                        [ option [ value "5x5" ] [ text "5x5" ]
-                        , option [ value "10x10" ] [ text "10x10" ]
-                        , option [ value "15x15" ] [ text "15x15" ]
-                        , option [ value "20x20" ] [ text "20x20" ]
+                        [ option [ value "5x5", selected (model.rowColSize == 5) ] [ text "5x5" ]
+                        , option [ value "10x10", selected (model.rowColSize == 10) ] [ text "10x10" ]
+                        , option [ value "15x15", selected (model.rowColSize == 15) ] [ text "15x15" ]
+                        , option [ value "20x20", selected (model.rowColSize == 20) ] [ text "20x20" ]
                         ]
             , button [ onClick NewGame ] [ text "New Game" ]
             ]
@@ -480,5 +477,4 @@ view model =
             [ table (tableStyle model.state)
                 (gameToView model)
             ]
-        , div footerContainerStyle []
         ]
