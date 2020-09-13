@@ -21,8 +21,8 @@ type alias DoubleList a =
 
 
 type alias Hints =
-    { rows : DoubleList Int
-    , cols : DoubleList Int
+    { rows : DoubleList ( Int, Bool )
+    , cols : DoubleList ( Int, Bool )
     }
 
 
@@ -30,9 +30,6 @@ type Mode
     = Classic
     | Arcade
     | MultiSolution
-
-
-
 
 
 type Msg

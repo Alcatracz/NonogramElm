@@ -3,7 +3,6 @@ module Style exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Types exposing (..)
-import Types exposing (State(..))
 
 
 containerStyle : List (Attribute msg)
@@ -43,16 +42,18 @@ sideContainerStyle =
     ]
 
 
-trStyle : List (Attribute msg)
-trStyle =
+trStyle : Bool -> List (Attribute msg)
+trStyle fifth =
     [ style "display" "flex"
-
-    --  , style "flex" "1"
     , style "padding" "0"
     , style "margin" "0"
     , style "border" "0"
     , style "box-sizing" "border-box"
-    , style "border-bottom" "1px solid grey"
+    , if fifth then
+        style "border-bottom" "3px solid grey"
+
+      else
+        style "border-bottom" "1px solid grey"
     ]
 
 
@@ -60,23 +61,15 @@ tableStyle : State -> List (Attribute msg)
 tableStyle state =
     if state == Finished then
         [ style "pointer-events" "none"
-
-        --, style "width" "500px"
-        --, style "height" "500px"
         ]
 
     else
-        [ --style "width" "700px"
-          --, style "height" "700px"
-          style "padding" "0"
+        [ style "padding" "0"
         , style "margin" "0"
         , style "border" "0"
         , style "border-collapse" "collapse"
         , style "border-spacing" "0"
         , style "box-sizing" "border-box"
-
-        -- , style "display" "flex"
-        --  , style "flex-direction" "column"
         ]
 
 
@@ -86,33 +79,28 @@ hintTdStyle direction ( width, height ) =
         custom : List (Attribute msg)
         custom =
             let
-                wid =
+                stringWidth =
                     String.fromFloat width ++ "px"
 
-                hei =
+                stringHeight =
                     String.fromFloat height ++ "px"
             in
             if direction == "row" then
                 [ style "flex-direction" "row"
                 , style "min-width" "25px"
                 , style "border-left" "none"
-                , style "width" wid
-                , style "height" hei
+                , style "width" stringWidth
+                , style "height" stringHeight
                 ]
 
             else
                 [ style "flex-direction" "column"
                 , style "border-top" "none"
-                , style "width" hei
-                , style "height" wid
+                , style "width" stringHeight
+                , style "height" stringWidth
                 ]
     in
-    [ --style "border" "1px solid black"
-      style "display" "flex"
-
-    -- , style "flex" "1"
-    --  , style "width" "5vw"
-    --, style "height" "5vw"
+    [ style "display" "flex"
     , style "justify-content" "flex-end"
     , style "align-items" "center"
     , style "padding" "0"
@@ -124,10 +112,10 @@ hintTdStyle direction ( width, height ) =
         ++ custom
 
 
-cellTdStyle : Cell -> Float -> State -> List (Attribute msg)
-cellTdStyle cell size state =
+cellTdStyle : Cell -> Float -> Bool -> State -> List (Attribute msg)
+cellTdStyle cell size fifth state =
     let
-        wid =
+        stringSize =
             String.fromFloat size ++ "px"
 
         custom : List (Attribute msg)
@@ -157,31 +145,37 @@ cellTdStyle cell size state =
                 IncorrectFalse ->
                     [ style "background-color" "grey" ]
     in
-    [ --style "border" "1px solid lightgrey"
-      style "display" "flex"
-
-    -- , style "flex" "1"
-    --, style "width" "5vw"
-    --, style "height" "5vw"
+    [ style "display" "flex"
     , style "justify-content" "center"
     , style "align-items" "center"
     , style "padding" "0"
     , style "margin" "0"
     , style "border" "0"
     , style "box-sizing" "border-box"
-    , style "width" wid
-    , style "height" wid
-    , style "border-right" "1px solid grey"
+    , style "width" stringSize
+    , style "height" stringSize
+    , if fifth then
+        style "border-right" "3px solid grey"
+
+      else
+        style "border-right" "1px solid grey"
     , style "text-align" "center"
     , style "color" "red"
     ]
         ++ custom
 
 
-hintStyle : List (Attribute msg)
-hintStyle =
-    [ style "padding" "0.25em"
-    ]
+hintStyle : Bool -> List (Attribute msg)
+hintStyle done =
+    if done then
+        [ style "text-decoration" "line-through"
+        , style "color" "grey"
+        , style "padding" "0.25em"
+        ]
+
+    else
+        [ style "padding" "0.25em"
+        ]
 
 
 footerContainerStyle : List (Attribute msg)

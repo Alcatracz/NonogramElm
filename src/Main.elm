@@ -2,12 +2,12 @@ module Main exposing (..)
 
 import Array exposing (Array)
 import Browser
-import Html exposing (Attribute, Html, button, col, div, h1, h3, input, option, p, select, span, table, td, text, tr)
+import Html exposing (Html, button, div, h1, h3, option, p, select, span, table, td, text, tr)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Events.Extra.Mouse as Mouse
 import Json.Decode as D
-import Json.Decode.Pipeline exposing (hardcoded, optional, required)
+import Json.Decode.Pipeline exposing (required)
 import Json.Encode as E
 import Ports exposing (..)
 import Random as Random
@@ -111,50 +111,50 @@ generateNewGame n =
     Random.generate GenerateGame (solutionGenerator n)
 
 
-rowWut : List Bool -> List Int -> List Int
-rowWut list wa =
+hintsFromRow : List Bool -> List Int -> List Int
+hintsFromRow list output =
     case list of
         x :: rest ->
-            if x == True then
-                case wa of
+            if x then
+                case output of
                     y :: reste ->
-                        rowWut rest (y + 1 :: reste)
+                        hintsFromRow rest (y + 1 :: reste)
 
                     [] ->
-                        wa
+                        output
 
             else
-                rowWut rest (0 :: wa)
+                hintsFromRow rest (0 :: output)
 
         [] ->
-            wa
+            output
 
 
 generateHintsFromSolution : Array (Array Bool) -> Hints
 generateHintsFromSolution solution =
     let
         rows =
-            Array.toList <| Array.map (\value -> List.filter (\val -> val /= 0) (List.reverse (rowWut (Array.toList value) [ 0 ]))) solution
+            Array.toList <| Array.map (\value -> List.map (\val -> ( val, False )) (List.filter (\val -> val /= 0) (List.reverse (hintsFromRow (Array.toList value) [ 0 ])))) solution
 
         cols =
-            Array.toList <| Array.map (\value -> List.filter (\val -> val /= 0) (rowWut (Array.toList value) [ 0 ])) (reverseColRows solution)
+            Array.toList <| Array.map (\value -> List.map (\val -> ( val, False )) (List.filter (\val -> val /= 0) (hintsFromRow (Array.toList value) [ 0 ]))) (reverseColRows solution True)
     in
     { rows = rows, cols = cols }
 
 
-reverseColRows : Array (Array Bool) -> Array (Array Bool)
-reverseColRows list =
+reverseColRows : Array (Array a) -> a -> Array (Array a)
+reverseColRows list default =
     let
-        another : Int -> Array Bool -> Bool
+        another : Int -> Array a -> a
         another index value =
             case Array.get index value of
                 Just n ->
                     n
 
                 Nothing ->
-                    True
+                    default
 
-        inner : Int -> Array Bool -> Array (Array Bool) -> Array Bool
+        inner : Int -> Array a -> Array (Array a) -> Array a
         inner index value li =
             case Array.get index value of
                 Just _ ->
@@ -194,41 +194,44 @@ update msg model =
             ( { model | gameMode = newMode }, Cmd.none )
 
         Solve ->
-            ( { model | field = solveMulti model.solution model.field, state = Finished }, Cmd.none )
+            ( { model | field = solveMultiSolution model.solution model.field, state = Finished }, Cmd.none )
 
-        Click x y bo ->
+        Click x y leftClick ->
             let
                 correctguess =
-                    checkDat x y model.solution bo
+                    checkGuess x y model.solution leftClick
 
                 newField =
                     case model.gameMode of
                         MultiSolution ->
-                            if bo then
+                            if leftClick then
                                 markAs x y model.field CorrectTrue
 
                             else
                                 markAs x y model.field CorrectFalse
 
                         _ ->
-                            if bo == True && correctguess == True then
+                            if leftClick == True && correctguess == True then
                                 markAs x y model.field CorrectTrue
 
-                            else if bo == False && correctguess == True then
+                            else if leftClick == False && correctguess == True then
                                 markAs x y model.field CorrectFalse
 
-                            else if correctguess == False && bo == False then
+                            else if correctguess == False && leftClick == False then
                                 markAs x y model.field IncorrectTrue
 
                             else
                                 markAs x y model.field IncorrectFalse
+
+                newHints =
+                    updateHintsfromField newField model.hints
 
                 newProgress =
                     (toFloat (sumOfElement CorrectTrue newField + sumOfElement IncorrectTrue newField) / toFloat (sumOfElement True model.solution)) * 100
             in
             case model.gameMode of
                 MultiSolution ->
-                    ( { model | field = newField }, Cmd.none )
+                    ( { model | field = newField, hints = newHints }, Cmd.none )
 
                 _ ->
                     if newProgress == 100 then
@@ -240,10 +243,51 @@ update msg model =
                                 ( { model | field = newField, state = Finished, progress = newProgress }, Cmd.none )
 
                     else if correctguess then
-                        ( { model | progress = newProgress, field = newField }, Cmd.none )
+                        ( { model | progress = newProgress, field = newField, hints = newHints }, Cmd.none )
 
                     else
-                        ( { model | mistakes = model.mistakes + 1, field = newField, progress = newProgress }, Cmd.none )
+                        ( { model | mistakes = model.mistakes + 1, hints = newHints, field = newField, progress = newProgress }, Cmd.none )
+
+
+updateHintsfromField : Array (Array Cell) -> Hints -> Hints
+updateHintsfromField field hints =
+    let
+        inner : Int -> List ( Int, Bool ) -> Array (Array Cell) -> List ( Int, Bool )
+        inner index li fi =
+            case Array.get index fi of
+                Just n ->
+                    let
+                        wat =
+                            another (Array.toList n) []
+                    in
+                    if List.length wat == Array.length n then
+                        List.map (\( v, _ ) -> ( v, True )) li
+
+                    else
+                        li
+
+                Nothing ->
+                    li
+
+        another : List Cell -> List Int -> List Int
+        another row list =
+            case row of
+                x :: rest ->
+                    if x == Blank then
+                        list
+
+                    else if x == CorrectTrue || x == CorrectFalse then
+                        another rest (1 :: list)
+
+                    else
+                        another rest (0 :: list)
+
+                [] ->
+                    list
+    in
+    { rows = List.indexedMap (\ind rowHints -> inner ind rowHints field) hints.rows
+    , cols = List.indexedMap (\ind rowHints -> inner ind rowHints (reverseColRows field Blank)) hints.cols
+    }
 
 
 updateWithStorage : Msg -> Model -> ( Model, Cmd Msg )
@@ -257,8 +301,8 @@ updateWithStorage msg oldModel =
     )
 
 
-solveMulti : Array (Array Bool) -> Array (Array Cell) -> Array (Array Cell)
-solveMulti solution field =
+solveMultiSolution : Array (Array Bool) -> Array (Array Cell) -> Array (Array Cell)
+solveMultiSolution solution field =
     let
         another : Int -> Int -> Cell -> Cell
         another rI cI val =
@@ -311,8 +355,8 @@ markAs x y field value =
             field
 
 
-checkDat : Int -> Int -> Array (Array Bool) -> Bool -> Bool
-checkDat x y solution markedAs =
+checkGuess : Int -> Int -> Array (Array Bool) -> Bool -> Bool
+checkGuess x y solution markedAs =
     case Array.get x solution of
         Just n ->
             case Array.get y n of
@@ -332,16 +376,16 @@ colHintsToView { cols } size =
         long =
             size * toFloat (ceiling (toFloat (List.length cols) / 5))
     in
-    tr trStyle (td (hintTdStyle "column" ( long, long )) [] :: List.map (\list -> Html.td (hintTdStyle "column" ( long, size )) (hintsToView list)) cols)
+    tr (trStyle False) (td (hintTdStyle "column" ( long, long )) [] :: List.map (\list -> Html.td (hintTdStyle "column" ( long, size )) (hintsToView list)) cols)
 
 
-hintsToView : List Int -> List (Html Msg)
+hintsToView : List ( Int, Bool ) -> List (Html Msg)
 hintsToView list =
-    List.map (\value -> div hintStyle [ text (String.fromInt value) ]) list
+    List.map (\( value, done ) -> div (hintStyle done) [ text (String.fromInt value) ]) list
 
 
-rowToView : Int -> Array Cell -> State -> Float -> Mode -> List (Html Msg)
-rowToView rowIndex list state size mode =
+cellsToView : Int -> Array Cell -> State -> Float -> Mode -> List (Html Msg)
+cellsToView rowIndex list state size mode =
     let
         attribu : Int -> Cell -> Html Msg
         attribu y value =
@@ -355,38 +399,38 @@ rowToView rowIndex list state size mode =
 
                 atribu =
                     if state == Finished || value /= Blank && mode /= MultiSolution then
-                        cellTdStyle value size state
+                        cellTdStyle value size (modBy 5 (y + 1) == 0) state
 
                     else
-                        Mouse.onContextMenu (\_ -> Click rowIndex y False) :: Mouse.onClick (\_ -> Click rowIndex y True) :: cellTdStyle value size state
+                        Mouse.onContextMenu (\_ -> Click rowIndex y False) :: Mouse.onClick (\_ -> Click rowIndex y True) :: cellTdStyle value size (modBy 5 (y + 1) == 0) state
             in
             td atribu [ text texto ]
     in
     Array.toList (Array.indexedMap (\index value -> attribu index value) list)
 
 
-rowtt : State -> Int -> List Int -> Array Cell -> Float -> Mode -> Html Msg
-rowtt state rowIndex hints cells size mode =
+rowToView : State -> Int -> List ( Int, Bool ) -> Array Cell -> Float -> Mode -> Html Msg
+rowToView state rowIndex hints cells size mode =
     let
         long =
             size * toFloat (ceiling (toFloat (Array.length cells) / 5))
     in
-    Html.tr trStyle (td (hintTdStyle "row" ( long, size )) (hintsToView hints) :: rowToView rowIndex cells state size mode)
+    Html.tr (trStyle (modBy 5 (rowIndex + 1) == 0)) (td (hintTdStyle "row" ( long, size )) (hintsToView hints) :: cellsToView rowIndex cells state size mode)
 
 
-fieldToView : Int -> List (Html Msg) -> DoubleList Int -> Array (Array Cell) -> State -> Float -> Mode -> List (Html Msg)
-fieldToView index li hints field state size mode =
+fieldToView : Int -> List (Html Msg) -> DoubleList ( Int, Bool ) -> Array (Array Cell) -> State -> Float -> Mode -> List (Html Msg)
+fieldToView index list hints field state size mode =
     case hints of
         x :: rest ->
             case Array.get 0 field of
                 Just y ->
-                    rowtt state index x y size mode :: fieldToView (index + 1) li rest (Array.slice 1 (Array.length field) field) state size mode
+                    rowToView state index x y size mode :: fieldToView (index + 1) list rest (Array.slice 1 (Array.length field) field) state size mode
 
                 Nothing ->
-                    li
+                    list
 
         [] ->
-            li
+            list
 
 
 gameToView : Model -> List (Html Msg)
@@ -394,14 +438,8 @@ gameToView model =
     let
         tdSize =
             defaultFrameSize / toFloat (model.rowColSize + 1)
-
-        wat =
-            colHintsToView model.hints tdSize
-
-        table =
-            fieldToView 0 [] model.hints.rows model.field model.state tdSize model.gameMode
     in
-    wat :: table
+    colHintsToView model.hints tdSize :: fieldToView 0 [] model.hints.rows model.field model.state tdSize model.gameMode
 
 
 targetValueModeDecoder : D.Decoder Mode
@@ -501,9 +539,7 @@ encode model =
         , ( "rowColsize", E.int model.rowColSize )
         , ( "rowSizeInput", E.int model.rowSizeInput )
         , ( "state", stateEncoder model.state )
-        , ( "gameMode"
-          , gameModeEncoder model.gameMode
-          )
+        , ( "gameMode", gameModeEncoder model.gameMode )
         , ( "hints", hintsEncoder model.hints )
         , ( "field", E.array (E.array cellEncoder) model.field )
         , ( "solution", E.array (E.array E.bool) model.solution )
@@ -635,13 +671,25 @@ stateEncoder state =
 hintsDecoder : D.Decoder Hints
 hintsDecoder =
     D.map2 Hints
-        (D.field "rows" (D.list (D.list D.int)))
-        (D.field "cols" (D.list (D.list D.int)))
+        (D.field "rows" (D.list (D.list tupleDecoder)))
+        (D.field "cols" (D.list (D.list tupleDecoder)))
+
+
+tupleDecoder : D.Decoder ( Int, Bool )
+tupleDecoder =
+    D.map2 Tuple.pair
+        (D.field "hint" D.int)
+        (D.field "vis" D.bool)
 
 
 hintsEncoder : Hints -> E.Value
 hintsEncoder hints =
     E.object
-        [ ( "rows", E.list (E.list E.int) hints.rows )
-        , ( "cols", E.list (E.list E.int) hints.cols )
+        [ ( "rows", E.list (E.list tupleEncoder) hints.rows )
+        , ( "cols", E.list (E.list tupleEncoder) hints.cols )
         ]
+
+
+tupleEncoder : ( Int, Bool ) -> E.Value
+tupleEncoder ( hint, vis ) =
+    E.object [ ( "hint", E.int hint ), ( "vis", E.bool vis ) ]
