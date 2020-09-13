@@ -21,7 +21,7 @@ type alias Model =
     { progress : Float
     , mistakes : Int
     , hints : Hints
-    , field : Array (Array Cell)
+    , field : Array (Array ( Cell, Bool ))
     , solution : Array (Array Bool)
     , state : State
     , rowColSize : Int
@@ -60,9 +60,9 @@ init flags =
             ( { progress = 0, mistakes = 0, hints = resetHints defaultRowColSize, field = resetField defaultRowColSize, solution = resetSolution defaultRowColSize, state = Running, rowColSize = defaultRowColSize, gameMode = Classic, rowSizeInput = defaultRowColSize }, generateNewGame defaultRowColSize )
 
 
-resetField : Int -> Array (Array Cell)
+resetField : Int -> Array (Array ( Cell, Bool ))
 resetField n =
-    Array.repeat n (Array.repeat n Blank)
+    Array.repeat n (Array.repeat n ( Blank, False ))
 
 
 resetHints : Int -> Hints
@@ -196,6 +196,13 @@ update msg model =
         Solve ->
             ( { model | field = solveMultiSolution model.solution model.field, state = Finished }, Cmd.none )
 
+        Hover x y isHovering ->
+            let
+                newField =
+                    markHover x y model.field isHovering
+            in
+            ( { model | field = newField }, Cmd.none )
+
         Click x y leftClick ->
             let
                 correctguess =
@@ -227,7 +234,7 @@ update msg model =
                     updateHintsfromField newField model.hints
 
                 newProgress =
-                    (toFloat (sumOfElement CorrectTrue newField + sumOfElement IncorrectTrue newField) / toFloat (sumOfElement True model.solution)) * 100
+                    (toFloat (sumOfElement ( CorrectTrue, False ) newField + sumOfElement ( IncorrectTrue, False ) newField) / toFloat (sumOfElement True model.solution)) * 100
             in
             case model.gameMode of
                 MultiSolution ->
@@ -249,10 +256,10 @@ update msg model =
                         ( { model | mistakes = model.mistakes + 1, hints = newHints, field = newField, progress = newProgress }, Cmd.none )
 
 
-updateHintsfromField : Array (Array Cell) -> Hints -> Hints
+updateHintsfromField : Array (Array ( Cell, Bool )) -> Hints -> Hints
 updateHintsfromField field hints =
     let
-        inner : Int -> List ( Int, Bool ) -> Array (Array Cell) -> List ( Int, Bool )
+        inner : Int -> List ( Int, Bool ) -> Array (Array ( Cell, Bool )) -> List ( Int, Bool )
         inner index li fi =
             case Array.get index fi of
                 Just n ->
@@ -269,10 +276,10 @@ updateHintsfromField field hints =
                 Nothing ->
                     li
 
-        another : List Cell -> List Int -> List Int
+        another : List ( Cell, Bool ) -> List Int -> List Int
         another row list =
             case row of
-                x :: rest ->
+                ( x, _ ) :: rest ->
                     if x == Blank then
                         list
 
@@ -286,7 +293,7 @@ updateHintsfromField field hints =
                     list
     in
     { rows = List.indexedMap (\ind rowHints -> inner ind rowHints field) hints.rows
-    , cols = List.indexedMap (\ind rowHints -> inner ind rowHints (reverseColRows field Blank)) hints.cols
+    , cols = List.indexedMap (\ind rowHints -> inner ind rowHints (reverseColRows field ( Blank, False ))) hints.cols
     }
 
 
@@ -301,34 +308,34 @@ updateWithStorage msg oldModel =
     )
 
 
-solveMultiSolution : Array (Array Bool) -> Array (Array Cell) -> Array (Array Cell)
+solveMultiSolution : Array (Array Bool) -> Array (Array ( Cell, Bool )) -> Array (Array ( Cell, Bool ))
 solveMultiSolution solution field =
     let
-        another : Int -> Int -> Cell -> Cell
-        another rI cI val =
+        another : Int -> Int -> ( Cell, Bool ) -> ( Cell, Bool )
+        another rI cI ( val, hov ) =
             case Array.get rI solution of
                 Just n ->
                     case Array.get cI n of
                         Just m ->
                             if m && val == CorrectFalse then
-                                IncorrectTrue
+                                ( IncorrectTrue, hov )
 
                             else if m == False && val == CorrectTrue then
-                                IncorrectFalse
+                                ( IncorrectFalse, hov )
 
                             else if val == Blank && m == True then
-                                IncorrectTrue
+                                ( IncorrectTrue, hov )
 
                             else
-                                val
+                                ( val, hov )
 
                         Nothing ->
-                            val
+                            ( val, hov )
 
                 Nothing ->
-                    val
+                    ( val, hov )
 
-        inner : Array Cell -> Int -> Array Cell
+        inner : Array ( Cell, Bool ) -> Int -> Array ( Cell, Bool )
         inner li rowIndex =
             Array.indexedMap (\colIndex value -> another rowIndex colIndex value) li
     in
@@ -345,11 +352,26 @@ flatten array =
     List.concat <| (Array.map Array.toList array |> Array.toList)
 
 
-markAs : Int -> Int -> Array (Array Cell) -> Cell -> Array (Array Cell)
+markHover : Int -> Int -> Array (Array ( Cell, Bool )) -> Bool -> Array (Array ( Cell, Bool ))
+markHover x y field value =
+    case Array.get x field of
+        Just n ->
+            case Array.get y n of
+                Just ( m, _ ) ->
+                    Array.set x (Array.set y ( m, value ) n) field
+
+                Nothing ->
+                    field
+
+        Nothing ->
+            field
+
+
+markAs : Int -> Int -> Array (Array ( Cell, Bool )) -> Cell -> Array (Array ( Cell, Bool ))
 markAs x y field value =
     case Array.get x field of
         Just n ->
-            Array.set x (Array.set y value n) field
+            Array.set x (Array.set y ( value, False ) n) field
 
         Nothing ->
             field
@@ -384,11 +406,11 @@ hintsToView list =
     List.map (\( value, done ) -> div (hintStyle done) [ text (String.fromInt value) ]) list
 
 
-cellsToView : Int -> Array Cell -> State -> Float -> Mode -> List (Html Msg)
+cellsToView : Int -> Array ( Cell, Bool ) -> State -> Float -> Mode -> List (Html Msg)
 cellsToView rowIndex list state size mode =
     let
-        attribu : Int -> Cell -> Html Msg
-        attribu y value =
+        attribu : Int -> ( Cell, Bool ) -> Html Msg
+        attribu y ( value, hov ) =
             let
                 texto =
                     if value == IncorrectTrue || value == IncorrectFalse then
@@ -399,17 +421,17 @@ cellsToView rowIndex list state size mode =
 
                 atribu =
                     if state == Finished || value /= Blank && mode /= MultiSolution then
-                        cellTdStyle value size (modBy 5 (y + 1) == 0) state
+                        cellTdStyle value size (modBy 5 (y + 1) == 0) state hov
 
                     else
-                        Mouse.onContextMenu (\_ -> Click rowIndex y False) :: Mouse.onClick (\_ -> Click rowIndex y True) :: cellTdStyle value size (modBy 5 (y + 1) == 0) state
+                        Mouse.onEnter (\_ -> Hover rowIndex y True) :: Mouse.onLeave (\_ -> Hover rowIndex y False) :: Mouse.onContextMenu (\_ -> Click rowIndex y False) :: Mouse.onClick (\_ -> Click rowIndex y True) :: cellTdStyle value size (modBy 5 (y + 1) == 0) state hov
             in
             td atribu [ text texto ]
     in
     Array.toList (Array.indexedMap (\index value -> attribu index value) list)
 
 
-rowToView : State -> Int -> List ( Int, Bool ) -> Array Cell -> Float -> Mode -> Html Msg
+rowToView : State -> Int -> List ( Int, Bool ) -> Array ( Cell, Bool ) -> Float -> Mode -> Html Msg
 rowToView state rowIndex hints cells size mode =
     let
         long =
@@ -418,7 +440,7 @@ rowToView state rowIndex hints cells size mode =
     Html.tr (trStyle (modBy 5 (rowIndex + 1) == 0)) (td (hintTdStyle "row" ( long, size )) (hintsToView hints) :: cellsToView rowIndex cells state size mode)
 
 
-fieldToView : Int -> List (Html Msg) -> DoubleList ( Int, Bool ) -> Array (Array Cell) -> State -> Float -> Mode -> List (Html Msg)
+fieldToView : Int -> List (Html Msg) -> DoubleList ( Int, Bool ) -> Array (Array ( Cell, Bool )) -> State -> Float -> Mode -> List (Html Msg)
 fieldToView index list hints field state size mode =
     case hints of
         x :: rest ->
@@ -541,7 +563,7 @@ encode model =
         , ( "state", stateEncoder model.state )
         , ( "gameMode", gameModeEncoder model.gameMode )
         , ( "hints", hintsEncoder model.hints )
-        , ( "field", E.array (E.array cellEncoder) model.field )
+        , ( "field", E.array (E.array cellTupleEncoder) model.field )
         , ( "solution", E.array (E.array E.bool) model.solution )
         ]
 
@@ -552,7 +574,7 @@ decoder =
         |> required "progress" D.float
         |> required "mistakes" D.int
         |> required "hints" hintsDecoder
-        |> required "field" (D.array (D.array cellDecoder))
+        |> required "field" (D.array (D.array cellTupleDecoder))
         |> required "solution" (D.array (D.array D.bool))
         |> required "state" stateDecoder
         |> required "rowColsize" D.int
@@ -584,6 +606,18 @@ cellDecoder =
                     _ ->
                         D.succeed Blank
             )
+
+
+cellTupleDecoder : D.Decoder ( Cell, Bool )
+cellTupleDecoder =
+    D.map2 Tuple.pair
+        (D.field "cell" cellDecoder)
+        (D.field "hov" D.bool)
+
+
+cellTupleEncoder : ( Cell, Bool ) -> E.Value
+cellTupleEncoder ( cell, vis ) =
+    E.object [ ( "cell", cellEncoder cell ), ( "hov", E.bool vis ) ]
 
 
 cellEncoder : Cell -> E.Value

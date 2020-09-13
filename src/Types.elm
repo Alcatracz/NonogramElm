@@ -40,3 +40,4 @@ type Msg
     | ChangeGameMode Mode
     | NextLevel
     | Solve
+    | Hover Int Int Bool

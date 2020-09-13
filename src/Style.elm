@@ -112,8 +112,8 @@ hintTdStyle direction ( width, height ) =
         ++ custom
 
 
-cellTdStyle : Cell -> Float -> Bool -> State -> List (Attribute msg)
-cellTdStyle cell size fifth state =
+cellTdStyle : Cell -> Float -> Bool -> State -> Bool -> List (Attribute msg)
+cellTdStyle cell size fifth state isHovering =
     let
         stringSize =
             String.fromFloat size ++ "px"
@@ -145,24 +145,29 @@ cellTdStyle cell size fifth state =
                 IncorrectFalse ->
                     [ style "background-color" "grey" ]
     in
-    [ style "display" "flex"
-    , style "justify-content" "center"
-    , style "align-items" "center"
-    , style "padding" "0"
-    , style "margin" "0"
-    , style "border" "0"
-    , style "box-sizing" "border-box"
-    , style "width" stringSize
-    , style "height" stringSize
-    , if fifth then
-        style "border-right" "3px solid grey"
+    custom
+        ++ [ style "display" "flex"
+           , style "justify-content" "center"
+           , style "align-items" "center"
+           , style "padding" "0"
+           , style "margin" "0"
+           , style "border" "0"
+           , style "box-sizing" "border-box"
+           , style "width" stringSize
+           , style "height" stringSize
+           , if fifth then
+                style "border-right" "3px solid grey"
 
-      else
-        style "border-right" "1px solid grey"
-    , style "text-align" "center"
-    , style "color" "red"
-    ]
-        ++ custom
+             else
+                style "border-right" "1px solid grey"
+           , style "text-align" "center"
+           , style "color" "red"
+           , if isHovering then
+                style "background-color" "yellow"
+
+             else
+                style "" ""
+           ]
 
 
 hintStyle : Bool -> List (Attribute msg)
