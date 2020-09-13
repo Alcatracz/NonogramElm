@@ -1,7 +1,7 @@
 # Nonogramm Elm
 
 This is an elm implementation for the puzzle game Nonogramm in Elm.
-## [Demo](alcatracz.github.io/NonogramElm/)
+## [Demo](https://alcatracz.github.io/NonogramElm/)
 
 ## Build from source
 
